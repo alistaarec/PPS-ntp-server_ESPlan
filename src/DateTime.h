@@ -32,6 +32,8 @@ class DateTime {
   // 32-bit times as seconds since 1/1/1970
   uint32_t unixtime(void) const;
 
+  String toString(void) const;
+
   void print(void) {
     Serial.print(F("UNIX: "));
     Serial.print(unixtime());

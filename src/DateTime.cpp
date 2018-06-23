@@ -1,4 +1,4 @@
-#include <avr/pgmspace.h>
+//#include <avr/pgmspace.h>
 #include "DateTime.h"
 
 #define SECONDS_PER_DAY 86400L
@@ -184,3 +184,20 @@ uint32_t DateTime::unixtime(void) const {
 
   return t;
 }
+
+String DateTime::toString(void) const{
+    char chartime[20];
+    char centi[4];
+    if (centisecond() < 10)
+    { sprintf(centi, "%01d00", centisecond());
+      
+    }
+    else
+    {
+      sprintf(centi, "%02d0", centisecond());
+    }
+
+    sprintf(chartime, "%02d:%02d:%02d,%s", hour(), minute(), second(), centi );
+    return chartime;
+  }
+

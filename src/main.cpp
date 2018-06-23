@@ -1,25 +1,28 @@
-#include <Ethernet2.h>
-#include <EthernetUdp2.h>
-#include <SoftwareSerial.h>
-#include <SPI.h>
+
+//#include <SPI.h>
 #include <Wire.h>
 #include "DateTime.h"
 #include "GPS.h"
+#include <ETH.h>
+#include <WifiUDP.h>
+#include <SSD1306.h>
 
+// GPS Seial debug
 #define DEBUG false
 
-byte mac[] = {
-  0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED
-};
-IPAddress ip(192, 168, 1, 177);
+// built-in LED
+#define LED_PIN 33
 
+// NTP port and packet buffer
 unsigned int NTP_PORT = 123;
-
 const int NTP_PACKET_SIZE = 48;
-
 byte packetBuffer[ NTP_PACKET_SIZE ];
 
-EthernetUDP Udp;
+//GPS UART
+//HardwareSerial Serial2(2);
+
+//UDP server
+WiFiUDP Udp;
 
 // time of last set or update, so its after gps update
 DateTime referenceTime;
@@ -28,34 +31,154 @@ DateTime receiveTime;
 DateTime transmitTime;
 
 // GPS
-static const int RXPin = 8, TXPin = 9;
-static const uint32_t GPSBaud = 9600;
+static const int RXPin = 32, TXPin = 10;
+static const uint32_t GPSBaud = 115200;
 GPS gps(RXPin, TXPin, DEBUG);
 
-void setup() {
-  // pinMode(RXPin, INPUT);
-  Serial.begin(115200);
-  gps.begin(GPSBaud);
+//initialize OLED of TTGO ES32 Devboard
+SSD1306 display(0x3C, 16, 17); // instance for the OLED. Addr, SDA, SCL
 
-  while (!Serial);
-  Ethernet.begin(mac, ip);
+
+// ethernet PHY event handler
+static bool eth_connected = false;
+void WiFiEvent(WiFiEvent_t event)
+{
+  String ip = "";
+  switch (event) {
+    case SYSTEM_EVENT_ETH_START:
+      Serial.println("ETH Started");
+      //set eth hostname here
+      ETH.setHostname("esp32-ethernet");
+      break;
+    case SYSTEM_EVENT_ETH_CONNECTED:
+      Serial.println("ETH Connected");
+      writeLCD(1,"ETH connected");
+      digitalWrite(LED_PIN, LOW);
+      break;
+    case SYSTEM_EVENT_ETH_GOT_IP:
+      ip = ETH.localIP().toString();
+      writeLCD(2,"IPv4: "+ip);
+
+      Serial.print("ETH MAC: ");
+      Serial.print(ETH.macAddress());
+      Serial.print(", IPv4: ");
+      Serial.print(ip);
+      if (ETH.fullDuplex()) {
+        Serial.print(", FULL_DUPLEX");
+      }
+      Serial.print(", ");
+      Serial.print(ETH.linkSpeed());
+      Serial.println("Mbps");
+      eth_connected = true;
+      break;
+    case SYSTEM_EVENT_ETH_DISCONNECTED:
+      Serial.println("ETH Disconnected");
+      writeLCD(1,"ETH disconnected");
+      writeLCD(2,"");
+      digitalWrite(LED_PIN, HIGH);
+      eth_connected = false;
+      break;
+    case SYSTEM_EVENT_ETH_STOP:
+      Serial.println("ETH Stopped");
+      eth_connected = false;
+      break;
+    default:
+      break;
+  }
+}
+
+
+void writeLCD(uint8_t row, String txt)
+ {
+  display.setColor(BLACK);
+  display.fillRect(0,row*16,128,16);
+  display.setColor(WHITE);
+  display.drawString(0, row*16, txt);
+  display.display();
+
+ }
+
+void setup() {
+  
+  pinMode(LED_PIN, OUTPUT);
+  digitalWrite(LED_PIN, HIGH);
+
+  Wire.begin(16,17);
+  display.init(); // initialise the OLED
+  display.clear();
+  display.flipScreenVertically(); // does what is says
+  //display.setFont(ArialMT_Plain_10); // does what is says
+  // Set the origin of text to top left
+  //display.setTextAlignment(TEXT_ALIGN_CENTER_BOTH);
+  
+  
+  Serial.begin(115200);
+  
+  //initializes UART2
+  gps.setup();
+
+
+  //while (!Serial);
+  WiFi.onEvent(WiFiEvent);
+  ETH.begin();
   Udp.begin(NTP_PORT);
 
   Serial.println("NTP Server is running.");
+  
+  writeLCD(0,"ESP32 GPS NTP Server");
+  
+  
   referenceTime = gps.getZDA();
+  //char lcdtime[20];
+  //sprintf(lcdtime, "%2d:%2d:%2d.%2d", lcdnow.hour(), lcdnow.minute(), lcdnow.second(), lcdnow.centisecond() );
+  //writeLCD(3,lcdtime);
+  
+  //updateLCDtime();
+  
+  }
+
+void updateLCDtime()
+{
+  DateTime lcdnow = gps.now();
+  String stime = "lastpkt: ";
+  stime += lcdnow.toString();
+  stime += " UTC";
+  writeLCD(3,stime);
+
 }
 
 void loop() {
   // NTP
-  // TODO: put in separate classes: `NTPServer` and `NTPPacket`
-  // maybe not :)
   IPAddress remoteIP;
   int remotePort;
   int packetSize = Udp.parsePacket();
 
   if (packetSize) {
-    Serial.println("Get UDP packet.");
     receiveTime = gps.getZDA();
+    //Serial.println("polled receiveTime from GPS");
+
+    digitalWrite(LED_PIN, HIGH);
+
+    
+    Serial.print("Received UDP packet with ");
+    Serial.print(packetSize);
+    Serial.print(" bytes size - ");
+    Serial.print("SourceIP ");
+    IPAddress remote = Udp.remoteIP();
+    for (int i =0; i < 4; i++)
+    {
+      Serial.print(remote[i], DEC);
+      if (i < 3)
+      {
+        Serial.print(".");
+      }
+    }
+    uint16_t port = Udp.remotePort();
+    
+    Serial.print(", Port ");
+    Serial.println(remotePort);
+
+    
 
     remoteIP = Udp.remoteIP();
     remotePort = Udp.remotePort();
@@ -80,10 +203,14 @@ void loop() {
     originTime.centisecond(highWordCentisecond << 16 | lowWordCentisecond);
 
     sendNTPpacket(remoteIP, remotePort);
+    digitalWrite(LED_PIN, LOW);
+    updateLCDtime();
+    Serial.println("NTP packet sent.\r\n\r\n*******************\r\n");
+    
   }
 }
 
-// send an NTP request to the time server at the given address
+// send NTP reply to the given address
 unsigned long sendNTPpacket(IPAddress remoteIP, int remotePort) {
   // set all bytes in the buffer to 0
   memset(packetBuffer, 0, NTP_PACKET_SIZE);
@@ -99,7 +226,18 @@ unsigned long sendNTPpacket(IPAddress remoteIP, int remotePort) {
   // log2(sec)
   // 0xFA <--> -6 <--> 0.01 s
   packetBuffer[3] = 0xFA;
-  // 8 bytes of zero for Root Delay & Root Dispersion
+  
+  // 8 bytes for Root Delay & Root Dispersion
+  packetBuffer[7] = 0; // root delay
+  packetBuffer[8] = 0;
+  packetBuffer[9] = 0;
+  packetBuffer[10] = 0x78;
+
+  packetBuffer[11] = 0; // root dispersion
+  packetBuffer[12] = 0;
+  packetBuffer[13] = 0;
+  packetBuffer[14] = 0x32;
+  
   // G
   packetBuffer[12] = 71;
   // P
@@ -143,6 +281,7 @@ unsigned long sendNTPpacket(IPAddress remoteIP, int remotePort) {
   packetBuffer[39] = recCent[3];
 
   // Transmit Time
+  //Serial.println("polling transmitTime");
   transmitTime = gps.getZDA();
   packetBuffer[40] = (transmitTime.ntptime() & 0xFF000000) >> 24;
   packetBuffer[41] = (transmitTime.ntptime() & 0x00FF0000) >> 16;
@@ -160,8 +299,6 @@ unsigned long sendNTPpacket(IPAddress remoteIP, int remotePort) {
   Udp.beginPacket(remoteIP, remotePort);
   Udp.write(packetBuffer, NTP_PACKET_SIZE);
   Udp.endPacket();
-
-  Serial.println("End of UDP packet.");
 }
 
 /**

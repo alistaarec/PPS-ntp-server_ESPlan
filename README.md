@@ -21,8 +21,6 @@ VCC --> +3.3V
 
 ## Links
 
-* [u-center](https://www.u-blox.com/en/product/u-center-windows)
-* [u-blox reference manual](https://www.u-blox.com/sites/default/files/products/documents/u-blox6-GPS-GLONASS-QZSS-V14_ReceiverDescrProtSpec_%28GPS.G6-SW-12013%29_Public.pdf)
-* [TinyGPS++](https://github.com/mikalhart/TinyGPSPlus)
-
+* [u-center software](https://www.u-blox.com/en/product/u-center-windows)
+* [u-blox command reference manual](https://www.u-blox.com/sites/default/files/products/documents/u-blox6-GPS-GLONASS-QZSS-V14_ReceiverDescrProtSpec_%28GPS.G6-SW-12013%29_Public.pdf)
 

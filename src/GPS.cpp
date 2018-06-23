@@ -1,5 +1,8 @@
 #include "GPS.h"
 
+
+HardwareSerial Serial2(2);
+
 /**
  * Setup GPS after load
  */
@@ -13,21 +16,25 @@ void GPS::setup() {
   // All NMEA messages should be off
   // > $PUBX,40,msgId,rddc,rus1,rus2,rusb,rspi,reserved*cs<CR><LF>
   //            ^-- string
+  Serial2.begin(9600, SERIAL_8N1, 32,10);
 
-  GPSSerial.print(s2ckv0("PUBX,40,GBS,0,0,0,0"));
-  GPSSerial.print(s2ckv0("PUBX,40,GGA,0,0,0,0"));
-  GPSSerial.print(s2ckv0("PUBX,40,GLL,0,0,0,0"));
-  GPSSerial.print(s2ckv0("PUBX,40,GLQ,0,0,0,0"));
-  GPSSerial.print(s2ckv0("PUBX,40,GNQ,0,0,0,0"));
-  GPSSerial.print(s2ckv0("PUBX,40,GNS,0,0,0,0"));
-  GPSSerial.print(s2ckv0("PUBX,40,GPQ,0,0,0,0"));
-  GPSSerial.print(s2ckv0("PUBX,40,GRS,0,0,0,0"));
-  GPSSerial.print(s2ckv0("PUBX,40,GSA,0,0,0,0"));
-  GPSSerial.print(s2ckv0("PUBX,40,GST,0,0,0,0"));
-  GPSSerial.print(s2ckv0("PUBX,40,GSV,0,0,0,0"));
-  GPSSerial.print(s2ckv0("PUBX,40,RMC,0,0,0,0"));
-  GPSSerial.print(s2ckv0("PUBX,40,TXT,0,0,0,0"));
-  GPSSerial.print(s2ckv0("PUBX,40,VTG,0,0,0,0"));
+  Serial.println("disabling all NMEA messages by setting rates to 0");
+
+  Serial2.print(s2ckv0("PUBX,40,GBS,0,0,0,0"));
+  Serial2.print(s2ckv0("PUBX,40,GGA,0,0,0,0"));
+  Serial2.print(s2ckv0("PUBX,40,GLL,0,0,0,0"));
+  Serial2.print(s2ckv0("PUBX,40,GLQ,0,0,0,0"));
+  Serial2.print(s2ckv0("PUBX,40,GNQ,0,0,0,0"));
+  Serial2.print(s2ckv0("PUBX,40,GNS,0,0,0,0"));
+  Serial2.print(s2ckv0("PUBX,40,GPQ,0,0,0,0"));
+  Serial2.print(s2ckv0("PUBX,40,GRS,0,0,0,0"));
+  Serial2.print(s2ckv0("PUBX,40,GSA,0,0,0,0"));
+  Serial2.print(s2ckv0("PUBX,40,GST,0,0,0,0"));
+  Serial2.print(s2ckv0("PUBX,40,GSV,0,0,0,0"));
+  Serial2.print(s2ckv0("PUBX,40,RMC,0,0,0,0"));
+  Serial2.print(s2ckv0("PUBX,40,TXT,0,0,0,0"));
+  Serial2.print(s2ckv0("PUBX,40,VTG,0,0,0,0"));
+  Serial2.print(s2ckv0("PUBX,40,ZTA,0,1,0,0"));
 
   //////////
   /// CFG //
@@ -69,11 +76,13 @@ void GPS::setup() {
 
   uint8_t cfg_rate[] = {0xb5, 0x62, 0x06, 0x08, 0x06, 0x00, 0x3C,
     0x00, 0x01, 0x00, 0x01, 0x00, 0x52, 0x22};
+  Serial.print("setting GPS clock rate...");
   while (!flag) {
     // s2ck(cfg_rate, 10)
     sendMessage(cfg_rate, 14);
     flag = getAck(cfg_rate);
   }
+  Serial.println("ok.");
   flag = false;
 
   ///////////////
@@ -99,17 +108,19 @@ void GPS::setup() {
   /// Example (for GLONASS {gnssId: 0x06}):
   ///   B5 62 06 3E 24 00 00 00 16 04 00 04 FF 00 00 00 00 01 01 01 03 00 00 00 00 01 05 00 03 00 00 00 00 01 06 08 FF 00 01 00 00 01 A4 0D
   ///////////////
-
+/*
   uint8_t cfg_gnss[] = {0xB5, 0x62, 0x06, 0x3E, 0x24,
     0x00, 0x00, 0x00, 0x16, 0x04,
     0x00, 0x04, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x01,
     0x01, 0x01, 0x03, 0x00, 0x00, 0x00, 0x00, 0x01,
     0x05, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x01,
     0x06, 0x08, 0xFF, 0x00, 0x01, 0x00, 0x00, 0x01, 0xA4, 0x0D};
+  Serial.print("setting GNSS config...");
   while (!flag) {
     sendMessage(cfg_gnss, 44);
     flag = getAck(cfg_gnss);
   }
+  Serial.println("done.");
   flag = false;
 
   // Save config
@@ -118,14 +129,17 @@ void GPS::setup() {
     0x00, 0x00, 0x00, 0x00, 0x00,
     0xFF, 0xFF, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x17, 0x31, 0xBF};
+  Serial.print("saving config...");
   while (!flag) {
     sendMessage(cfg_cfg, 21);
     flag = getAck(cfg_cfg);
   }
+  Serial.println("config saved.");
   flag = false;
-
-  // Turn on NMEA message - GxZDA
-  GPSSerial.print(s2ckv0("PUBX,40,ZDA,0,0,0,0"));
+*/
+  Serial.print("Turning off NMEA message - GxZDA...");
+  Serial2.print(s2ckv0("PUBX,40,ZDA,0,0,0,0"));
+  Serial.println("done.");
 }
 
 /**
@@ -136,10 +150,10 @@ void GPS::setup() {
 void GPS::sendMessage(uint8_t *msg, uint8_t len) {
   int i = 0;
   for (i = 0; i < len; i++) {
-    GPSSerial.write(msg[i]);
+    Serial2.write(msg[i]);
     // Serial.print(msg[i], HEX);
   }
-  GPSSerial.println();
+  Serial2.println();
 }
 
 /**
@@ -152,7 +166,7 @@ bool GPS::getAck(uint8_t *msg) {
   uint8_t ackByteID = 0;
   uint8_t ackPacket[10];
   unsigned long startTime = millis();
-  // Serial.print(" * Reading ACK response: ");
+  Serial.print(" * Reading ACK response: ");
 
   // Construct the expected ACK packet
   ackPacket[0] = 0xB5;  // header
@@ -182,14 +196,14 @@ bool GPS::getAck(uint8_t *msg) {
     }
 
     // Timeout if no valid response in 3 seconds
-    if (millis() - startTime > 3000) {
+    if (millis() - startTime > 5000) {
       Serial.println(" (FAILED!)");
       return false;
     }
 
     // Make sure data is available to read
-    if (GPSSerial.available()) {
-      b = GPSSerial.read();
+    if (Serial2.available()) {
+      b = Serial2.read();
 
       // Check that bytes arrive in sequence as per expected ACK packet
       if (b == ackPacket[ackByteID]) {
@@ -269,27 +283,32 @@ DateTime GPS::getZDA() {
   getFlag_ = false;
   uint8_t length = 0;
 
-  GPSSerial.print("$EIGLQ,ZDA*25\r\n");
+  //debug
+  //Serial.println("sending \"$EIGPQ,ZDA*39\" to Serial2");
 
-  // Serial.println("Wait for response");
+  Serial2.print("$EIGPQ,ZDA*39\r\n");
 
-  while (!GPSSerial.available());
+  Serial.println("Waiting for response...");
+
+  while (!Serial2.available());
 
   while (length < 38) {
-    while (GPSSerial.available() > 0) {
+    while (Serial2.available() > 0) {
+      //Serial.print(Serial2.read());
       if (encode()) {
         dt = now();
-        if (debug_) {
+        
           Serial.print(dt.ntptime());
           Serial.print(" ");
           Serial.println(dt.centisecond());
-        }
+        
       }
       length++;
     }
   }
-
-  // Serial.println("End of get ZDA");
+  //Serial.print("got response -  ");
+  
+  //Serial.println("End of getZDA");
   getFlag_ = true;
 
   return dt;
@@ -303,10 +322,12 @@ DateTime GPS::getZDA() {
  */
 bool GPS::encode() {
 
-  char c = GPSSerial.read();
-  // Serial.print(c);
-
+  char c = Serial2.read();
+  Serial.print(c);
+  //Serial.println(validCode);
   if (c == '$') {
+    //Serial.println("dollar sign detected - ignoring it");
+    
     tmp = "\0";
     msg = "$";
     count_ = 0;
@@ -318,6 +339,7 @@ bool GPS::encode() {
   }
 
   if (!validCode) {
+    //Serial.println("no validcode");
     return false;
   }
   msg += c;
@@ -430,3 +452,4 @@ DateTime GPSDateTime::now() {
   return DateTime(year(), month(), day(),
     hour(), minute(), second(), centisecond());
 }
+
