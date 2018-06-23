@@ -1,38 +1,28 @@
-# Arduino NTP Server
+# ESP32 NTP Server
 
-Проект по курсу [Защита информации МФТИ](https://ru.wikipedia.org/wiki/Проект:Защита_информации/2015). Реализация [NTP](https://ru.wikipedia.org/wiki/NTP) сервера на Arduino, используя в качестве эталона времени — часы со спутника.
+NTP v3 server implementation using NEO-6MV2 GPS module as a reference clock. Mostly based on https://github.com/sigorilla/arduino-ntp-server with some modifications to work on espressif ESP32 platform and to use the global positioning system (GPS) instead of the russian GLONASS. Specifically, the code is designed to run on an "olimex ESP32-GATEWAY" development board incorporating a RJ45 100MBit ethernet port, but can easily be adapted to work with WiFi connection, if desired. Also, a cheap 128x64 0.96" OLED lcd is used for displaying basic information.
 
-## Плата
+## Hardware
 
-Arduino Leonardo ETH
+Olimex ESP32-Gateway (or other espressif ESP32 board)
+GPS — `GY-NEO6MV2`
 
-## Модули
-
-* GPS — `GY-NEO6MV2`
-
-## Конфигурация
 
 ### GPS
 ```
-GPS <-> Arduino
+GPS <-> ESP32
 -----------------
 GND --> GND
-Tx  --> PIN8 (Rx)
-Rx  --> PIN9 (Tx)
+Tx  --> PIN10 (Rx)
+Rx  --> PIN32 (Tx)
 VCC --> +3.3V
 ```
 
-## Отладка
 
-Для отладки создан скетч `UCenterConfig`, который перенапрявляет все сообщения из стандартного Serial в UART GPS модуля. Таким образом, можно настроить GPS модуль, используя программу u-center от u-blox.
-
-## Ссылки
+## Links
 
 * [u-center](https://www.u-blox.com/en/product/u-center-windows)
-* [Instructables about u-blox](http://www.instructables.com/id/Arduino-Ublox-GPS/)
+* [u-blox reference manual](https://www.u-blox.com/sites/default/files/products/documents/u-blox6-GPS-GLONASS-QZSS-V14_ReceiverDescrProtSpec_%28GPS.G6-SW-12013%29_Public.pdf)
 * [TinyGPS++](https://github.com/mikalhart/TinyGPSPlus)
 
-## Участники
 
-* Игорь Степанов — 213 группа
-* Павел Лысенко — 216 группа
