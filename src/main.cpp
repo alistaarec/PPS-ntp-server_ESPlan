@@ -193,27 +193,27 @@ void sendNTPpacket(IPAddress remoteIP, int remotePort) {
   memset(packetBuffer, 0, NTP_PACKET_SIZE);
   // Initialize values needed to form NTP request
   // (see URL above for details on the packets)
-  // LI: 0, Version: 3, Mode: 4 (server)
-  packetBuffer[0] = 0b00011100;
+  // LI: 0, Version: 4, Mode: 4 (server)
+  packetBuffer[0] = 0b00100100;
   // Stratum, or type of clock
   packetBuffer[1] = 0b00000001;
   // Polling Interval
-  packetBuffer[2] = 10;
+  packetBuffer[2] = 6;
   // Peer Clock Precision
   // log2(sec)
   // 0xFA <--> -6 <--> 0.01 s
-  packetBuffer[3] = 0xFA;
+  packetBuffer[3] = 0xF9;
   
   // 8 bytes for Root Delay & Root Dispersion
-  packetBuffer[7] = 0; // root delay
+  packetBuffer[7] = 0; // root dispersion
   packetBuffer[8] = 0;
   packetBuffer[9] = 0;
-  packetBuffer[10] = 0x74;
+  packetBuffer[10] = 0xB;
 
-  packetBuffer[11] = 0; // root dispersion
+  packetBuffer[11] = 0; // root delay
   packetBuffer[12] = 0;
-  packetBuffer[13] = 0;
-  packetBuffer[14] = 0x2F;
+  packetBuffer[13] = 0x16;
+  packetBuffer[14] = 0;
   
   //time source (namestring)
   packetBuffer[12] = 71; // G
@@ -227,7 +227,7 @@ void sendNTPpacket(IPAddress remoteIP, int remotePort) {
   packetBuffer[18] = (referenceTime.ntptime() & 0x0000FF00) >> 8;
   packetBuffer[19] = (referenceTime.ntptime() & 0x000000FF);
   byte refCent[4];
-  d2ba(1.0 * referenceTime.centisecond() / 100, refCent);
+  d2ba((1.0 * referenceTime.centisecond() / 100), refCent);
   packetBuffer[20] = refCent[0];
   packetBuffer[21] = refCent[1];
   packetBuffer[22] = refCent[2];
