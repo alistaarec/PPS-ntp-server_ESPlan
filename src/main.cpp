@@ -30,7 +30,7 @@ DateTime transmitTime;
 #define RXPin 32
 #define TXPin  10
 #define GPSBaud 115200
-#define gpsTimeOffset 4 //centisecond offset, compared to known-good stratum 1 server
+#define gpsTimeOffset 5 //centisecond raw offset, compared to known-good stratum 1 server
 GPS gps(RXPin, TXPin, DEBUG);
 
 //initialize i2C OLED on esp32 I2C0 (pins 16 and 17)
@@ -147,6 +147,7 @@ void setup() {
       referenceTime.time(referenceTime.ntptime() + 1);
       referenceTime.centisecond(diff-100);
     }  
+
   }
 
 
@@ -197,28 +198,37 @@ void sendNTPpacket(IPAddress remoteIP, int remotePort)
 
   // Initialize values needed to form NTP request
   // (see URL in readme.md for details on packet fields)
+  
   // LI: 0, Version: 4, Mode: 4 (server)
   packetBuffer[0] = 0b00100100;
+  
   // Stratum, or type of clock
   packetBuffer[1] = 0b00000001;
+  
   // Polling Interval
-  packetBuffer[2] = 6;
+  packetBuffer[2] = 0x6;
+
   // Peer Clock Precision
   // log2(sec)
   // 0xF9 <--> -7 <--> 0.0078125 s
-  // cheating here, since in fact we only have 0.01 s
-  packetBuffer[3] = 0xF9;
+  // 0xFA <--> -6 <--> 0.0156250 s
+  // 0xFB <--> -5 <--> 0.0312500 s 
+  // in fact we have 0.01 s accuracy, so we announce a clock precision of -6
+  packetBuffer[3] = 0xFA;
   
   // 8 bytes for Root Delay & Root Dispersion
-  packetBuffer[7] = 0; // root dispersion
+  // root delay
+  packetBuffer[4] = 0; 
+  packetBuffer[5] = 0;
+  packetBuffer[6] = 0; 
+  packetBuffer[7] = 0;
+  
+  // root dispersion
   packetBuffer[8] = 0;
   packetBuffer[9] = 0;
-  packetBuffer[10] = 0xB;
-
-  packetBuffer[11] = 0; // root delay
-  packetBuffer[12] = 0;
-  packetBuffer[13] = 0x16;
-  packetBuffer[14] = 0;
+  packetBuffer[10] = 0;
+  packetBuffer[11] = 0; // 0x78  <--> 0x0000.0078 <--> +-0,3052 ms root dispersion
+  
   
   //time source (namestring)
   packetBuffer[12] = 71; // G
@@ -263,6 +273,7 @@ void sendNTPpacket(IPAddress remoteIP, int remotePort)
   // Transmit Time
   //Serial.println("polling transmitTime");
   transmitTime = gps.getZDA();
+  
   int diff = transmitTime.centisecond() + gpsTimeOffset;
   if (diff <= 99)
   {
@@ -341,6 +352,7 @@ void loop()
       receiveTime.time(receiveTime.ntptime() + 1);
       receiveTime.centisecond(diff-100);
     }
+
     //Serial.println(receiveTime.centisecond());
     
     // We've received a packet, read the data from it
