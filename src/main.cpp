@@ -35,13 +35,25 @@ static const int RXPin = 32, TXPin = 10;
 static const uint32_t GPSBaud = 115200;
 GPS gps(RXPin, TXPin, DEBUG);
 
-//initialize OLED of TTGO ES32 Devboard
-SSD1306 display(0x3C, 16, 17); // instance for the OLED. Addr, SDA, SCL
+//initialize i2C OLED LCD on esp32 I2C0 (pins 16 and 17)
+SSD1306 display(0x3C, 16, 17); // Addr, SDA, SCL
+u8_t lcdOffsetUpper = 8; // width in number of pixels for upper free space on lcd
+u8_t lcdOffsetLeft = 5; // width in number of pixels for left free space on lcd
+
+void writeLCD(uint8_t row, String txt)
+ {
+  display.setColor(BLACK);
+  display.fillRect(lcdOffsetLeft, lcdOffsetUpper+(row*15), 128, 16);
+  display.setColor(WHITE);
+  display.drawString(lcdOffsetLeft, lcdOffsetUpper+(row*15), txt);
+  display.display();
+
+ }
 
 
 // ethernet PHY event handler
 static bool eth_connected = false;
-void WiFiEvent(WiFiEvent_t event)
+void EthEvent(WiFiEvent_t event)
 {
   String ip = "";
   switch (event) {
@@ -88,16 +100,6 @@ void WiFiEvent(WiFiEvent_t event)
 }
 
 
-void writeLCD(uint8_t row, String txt)
- {
-  display.setColor(BLACK);
-  display.fillRect(0,row*16,128,16);
-  display.setColor(WHITE);
-  display.drawString(0, row*16, txt);
-  display.display();
-
- }
-
 void setup() {
   
   pinMode(LED_PIN, OUTPUT);
@@ -107,7 +109,8 @@ void setup() {
   display.init(); // initialise the OLED
   display.clear();
   display.flipScreenVertically(); // does what is says
-  //display.setFont(ArialMT_Plain_10); // does what is says
+  //display.setFont(ArialMT_Plain_10); // does what it says
+  
   // Set the origin of text to top left
   //display.setTextAlignment(TEXT_ALIGN_CENTER_BOTH);
   
@@ -119,7 +122,9 @@ void setup() {
 
 
   //while (!Serial);
-  WiFi.onEvent(WiFiEvent);
+  WiFi.mode(WIFI_OFF); // turn off wifi radio
+  btStop(); // turn off ble radio
+  WiFi.onEvent(EthEvent);
   ETH.begin();
   Udp.begin(NTP_PORT);
 
@@ -147,71 +152,43 @@ void updateLCDtime()
 
 }
 
-void loop() {
-  // NTP
-  IPAddress remoteIP;
-  int remotePort;
-  int packetSize = Udp.parsePacket();
 
-  if (packetSize) {
-    receiveTime = gps.getZDA();
-    //Serial.println("polled receiveTime from GPS");
 
-    digitalWrite(LED_PIN, HIGH);
 
-    
-    Serial.print("Received UDP packet with ");
-    Serial.print(packetSize);
-    Serial.print(" bytes size - ");
-    Serial.print("SourceIP ");
-    IPAddress remote = Udp.remoteIP();
-    for (int i =0; i < 4; i++)
-    {
-      Serial.print(remote[i], DEC);
-      if (i < 3)
-      {
-        Serial.print(".");
-      }
+
+
+/**
+ * Double to byte array
+ */
+void d2ba(double cent, byte *output) {
+  // Serial.println(cent);
+
+  int j = 0;
+
+  for (int i = 0; i < 8; i++){
+    byte tmp = int(cent * 16);
+    cent *= 16;
+    cent = cent - floor(cent);
+    // Serial.print(cent, 10);
+    // Serial.print(", ");
+    if (i % 2 == 1) {
+      output[j] += tmp;
+      j++;
+    } else {
+      output[j] = tmp * 16;
     }
-    uint16_t port = Udp.remotePort();
-    
-    Serial.print(", Port ");
-    Serial.println(remotePort);
-
-    
-
-    remoteIP = Udp.remoteIP();
-    remotePort = Udp.remotePort();
-    // Serial.print("IP: ");
-    // Serial.println(remoteIP);
-    // Serial.print("port: ");
-    // Serial.println(remotePort);
-    // We've received a packet, read the data from it
-    // read the packet into the buffer
-    Udp.read(packetBuffer, NTP_PACKET_SIZE);
-
-    // the timestamp starts at byte 40 of the received packet and is four bytes,
-    // or two words, long. First, extract the two words:
-    unsigned long highWordSecond = word(packetBuffer[40], packetBuffer[41]);
-    unsigned long lowWordSecond = word(packetBuffer[42], packetBuffer[43]);
-    unsigned long highWordCentisecond = word(packetBuffer[44], packetBuffer[45]);
-    unsigned long lowWordCentisecond = word(packetBuffer[46], packetBuffer[47]);
-
-    // combine the four bytes (two words) into a long integer
-    // this is NTP time (seconds since Jan 1 1900):
-    originTime.time(highWordSecond << 16 | lowWordSecond);
-    originTime.centisecond(highWordCentisecond << 16 | lowWordCentisecond);
-
-    sendNTPpacket(remoteIP, remotePort);
-    digitalWrite(LED_PIN, LOW);
-    updateLCDtime();
-    Serial.println("NTP packet sent.\r\n\r\n*******************\r\n");
-    
   }
+
+  // Serial.println("Debug loop");
+  // for (int i = 0; i < 4; i++) {
+  //   Serial.println(output[i]);
+  // }
+  // Serial.println("End debug loop");
 }
 
+
 // send NTP reply to the given address
-unsigned long sendNTPpacket(IPAddress remoteIP, int remotePort) {
+void sendNTPpacket(IPAddress remoteIP, int remotePort) {
   // set all bytes in the buffer to 0
   memset(packetBuffer, 0, NTP_PACKET_SIZE);
   // Initialize values needed to form NTP request
@@ -231,19 +208,17 @@ unsigned long sendNTPpacket(IPAddress remoteIP, int remotePort) {
   packetBuffer[7] = 0; // root delay
   packetBuffer[8] = 0;
   packetBuffer[9] = 0;
-  packetBuffer[10] = 0x78;
+  packetBuffer[10] = 0x74;
 
   packetBuffer[11] = 0; // root dispersion
   packetBuffer[12] = 0;
   packetBuffer[13] = 0;
-  packetBuffer[14] = 0x32;
+  packetBuffer[14] = 0x2F;
   
-  // G
-  packetBuffer[12] = 71;
-  // P
-  packetBuffer[13] = 80;
-  // S
-  packetBuffer[14] = 83;
+  //time source (namestring)
+  packetBuffer[12] = 71; // G
+  packetBuffer[13] = 80; // P
+  packetBuffer[14] = 83; // S
   packetBuffer[15] = 0;
 
   // Reference Time
@@ -295,37 +270,69 @@ unsigned long sendNTPpacket(IPAddress remoteIP, int remotePort) {
   packetBuffer[47] = traCent[3];
 
   // all NTP fields have been given values, now
-  // you can send a packet requesting a timestamp:
+  // you can send a packet with a timestamp:
   Udp.beginPacket(remoteIP, remotePort);
   Udp.write(packetBuffer, NTP_PACKET_SIZE);
   Udp.endPacket();
+
 }
 
-/**
- * Double to byte array
- */
-void d2ba(double cent, byte *output) {
-  // Serial.println(cent);
 
-  int j = 0;
+void loop() {
+  // NTP
+  IPAddress remoteIP;
+  int remotePort;
+  int packetSize = Udp.parsePacket();
 
-  for (int i = 0; i < 8; i++){
-    byte tmp = int(cent * 16);
-    cent *= 16;
-    cent = cent - floor(cent);
-    // Serial.print(cent, 10);
-    // Serial.print(", ");
-    if (i % 2 == 1) {
-      output[j] += tmp;
-      j++;
-    } else {
-      output[j] = tmp * 16;
+  if (packetSize) {
+    receiveTime = gps.getZDA();
+    //Serial.println("polled receiveTime from GPS");
+
+    digitalWrite(LED_PIN, HIGH);
+
+    remoteIP = Udp.remoteIP();
+    remotePort = Udp.remotePort();
+
+    Serial.print("Received UDP packet with ");
+    Serial.print(packetSize);
+    Serial.print(" bytes size - ");
+    Serial.print("SourceIP ");
+    
+    for (int i =0; i < 4; i++)
+    {
+      Serial.print(remoteIP[i], DEC);
+      if (i < 3)
+      {
+        Serial.print(".");
+      }
     }
-  }
+    //uint16_t port = Udp.remotePort();
+    
+    Serial.print(", Port ");
+    Serial.println(remotePort);
 
-  // Serial.println("Debug loop");
-  // for (int i = 0; i < 4; i++) {
-  //   Serial.println(output[i]);
-  // }
-  // Serial.println("End debug loop");
+    // We've received a packet, read the data from it
+    // read the packet into the buffer
+    Udp.read(packetBuffer, NTP_PACKET_SIZE);
+
+    // the timestamp starts at byte 40 of the received packet and is four bytes,
+    // or two words, long. First, extract the two words:
+    unsigned long highWordSecond = word(packetBuffer[40], packetBuffer[41]);
+    unsigned long lowWordSecond = word(packetBuffer[42], packetBuffer[43]);
+    unsigned long highWordCentisecond = word(packetBuffer[44], packetBuffer[45]);
+    unsigned long lowWordCentisecond = word(packetBuffer[46], packetBuffer[47]);
+
+    // combine the four bytes (two words) into a long integer
+    // this is NTP time (seconds since Jan 1 1900):
+    originTime.time(highWordSecond << 16 | lowWordSecond);
+    originTime.centisecond(highWordCentisecond << 16 | lowWordCentisecond);
+
+    sendNTPpacket(remoteIP, remotePort);
+    digitalWrite(LED_PIN, LOW);
+    updateLCDtime();
+    Serial.println("NTP packet sent.\r\n\r\n*******************\r\n");
+    
+  }
 }
+
+
