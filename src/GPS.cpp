@@ -298,6 +298,7 @@ DateTime GPS::getZDA() {
       if (encode()) {
         dt = now();
         
+        
           Serial.print(dt.ntptime());
           Serial.print(" ");
           Serial.println(dt.centisecond());
@@ -310,7 +311,7 @@ DateTime GPS::getZDA() {
   
   //Serial.println("End of getZDA");
   getFlag_ = true;
-
+  
   return dt;
 }
 
