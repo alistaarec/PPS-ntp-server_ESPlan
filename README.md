@@ -24,4 +24,4 @@ VCC --> +3.3V
 
 * [u-center software](https://www.u-blox.com/en/product/u-center-windows)
 * [u-blox command reference manual](https://www.u-blox.com/sites/default/files/products/documents/u-blox6-GPS-GLONASS-QZSS-V14_ReceiverDescrProtSpec_%28GPS.G6-SW-12013%29_Public.pdf)
-* [NTP packet reference](https://www.meinbergglobal.com/english/info/ntp-packet.htm)
+* [NTP packet reference](https://www.cisco.com/c/en/us/about/press/internet-protocol-journal/back-issues/table-contents-58/154-ntp.html)
