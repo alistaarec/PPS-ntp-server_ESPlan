@@ -1,4 +1,3 @@
-
 #include <Wire.h>
 #include <ETH.h>
 #include <WifiUDP.h>
@@ -26,11 +25,13 @@ DateTime originTime;
 DateTime receiveTime;
 DateTime transmitTime;
 
+unsigned long nowtime;
+#define referenceTimeRefresh 5000 //interval in ms for refTime refresh
 // GPS init
 #define RXPin 32
 #define TXPin  10
 #define GPSBaud 115200
-#define gpsTimeOffset 5 //centisecond raw offset, compared to known-good stratum 1 server
+#define gpsTimeOffset 4 //centisecond raw offset, compared to known-good stratum 1 server
 GPS gps(RXPin, TXPin, DEBUG);
 
 //initialize i2C OLED on esp32 I2C0 (pins 16 and 17)
@@ -381,6 +382,27 @@ void loop()
     Serial.println("NTP packet sent.\r\n\r\n*******************\r\n");
     
   }
+  else // no packet received, we can do other stuff now
+  {
+    if (millis() >= (nowtime + referenceTimeRefresh))
+    {
+        nowtime = millis();
+        referenceTime = gps.getZDA();
+        int diff = referenceTime.centisecond() + gpsTimeOffset; 
+        if (diff <= 99)
+          {
+            referenceTime.centisecond(diff);
+          }
+          else
+          {
+            referenceTime.time(referenceTime.ntptime() + 1);
+            referenceTime.centisecond(diff-100);
+          }  
+
+        
+    }
+  }
+
 }
 
 
