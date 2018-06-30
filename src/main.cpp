@@ -19,19 +19,24 @@ byte packetBuffer[NTP_PACKET_SIZE];
 //UDP server (ETH.h uses WifiUDP class)
 WiFiUDP Udp;
 
-// time of last set or update, so its after gps update
+// global timestamp storage
 DateTime referenceTime;
 DateTime originTime;
 DateTime receiveTime;
 DateTime transmitTime;
 
+// refresh timestamp storage
 unsigned long nowtime;
-#define referenceTimeRefresh 5000 //interval in ms for refTime refresh
+#define referenceTimeRefresh 3600000 //3600000 ms == 1h; interval in ms for getting reference time from GPS
+
 // GPS init
 #define RXPin 32
 #define TXPin  10
 #define GPSBaud 115200
 #define gpsTimeOffset 4 //centisecond raw offset, compared to known-good stratum 1 server
+HardwareSerial Serial2(2); // for initial config at 9600 baud
+HardwareSerial Serial1(1); // for GPS comm at 115200 baud
+
 GPS gps(RXPin, TXPin, DEBUG);
 
 //initialize i2C OLED on esp32 I2C0 (pins 16 and 17)
@@ -39,7 +44,12 @@ GPS gps(RXPin, TXPin, DEBUG);
 #define SCLpin 17
 SSD1306 display(0x3C, SDApin, SCLpin); // Addr, SDA, SCL
 #define lcdOffsetUpper  8 // width in number of pixels for upper free space on lcd
-#define lcdOffsetLeft  5 // width in number of pixels for left free space on lcd
+#define lcdOffsetLeft  4 // width in number of pixels for left free space on lcd
+
+// rocking switch on PIN5 to toggle between serialMirror/NTPserver modes
+#define SWITCH_PIN 5
+static bool SerialMirror = 0;
+
 
 void writeLCD(uint8_t row, String txt)
  {
@@ -51,9 +61,8 @@ void writeLCD(uint8_t row, String txt)
  }
 
 
-// ethernet PHY event handler
 static bool eth_connected = false;
-
+// ethernet PHY event handler
 void EthEvent(WiFiEvent_t event)
 {
   String ip = "";
@@ -105,6 +114,9 @@ void EthEvent(WiFiEvent_t event)
 
 void setup() {
 
+  pinMode(SWITCH_PIN, INPUT);
+  digitalWrite(SWITCH_PIN, LOW);
+
   //turn builtin LED off
   pinMode(LED_PIN, OUTPUT);
   digitalWrite(LED_PIN, HIGH);
@@ -115,7 +127,7 @@ void setup() {
   // initialise the OLED
   display.init(); 
   display.clear();
-  display.flipScreenVertically(); // does what is says
+  display.flipScreenVertically(); 
   //display.setFont(ArialMT_Plain_10); // does what it says
   // Set the origin of text to top left
   //display.setTextAlignment(TEXT_ALIGN_CENTER_BOTH);
@@ -136,7 +148,7 @@ void setup() {
   Serial.println("NTP Server is running.");
   writeLCD(0,"ESP32 GPS NTP Server");
   
-  //get initial refTime
+  //get initial reference time
   referenceTime = gps.getZDA();
   int diff = referenceTime.centisecond() + gpsTimeOffset; 
   if (diff <= 99)
@@ -308,101 +320,125 @@ void sendNTPpacket(IPAddress remoteIP, int remotePort)
 
 void loop() 
 {
-  // process NTP requests
-  IPAddress remoteIP;
-  int remotePort;
 
-  int packetSize = Udp.parsePacket();
+  SerialMirror = digitalRead(SWITCH_PIN);
 
-  if (packetSize) 
+  if (SerialMirror)
   {
-    
-    digitalWrite(LED_PIN, HIGH);
+    writeLCD(1,"Serial Monitor mode");
 
-    //store sender ip and port for later use
-    remoteIP = Udp.remoteIP();
-    remotePort = Udp.remotePort();
-
-    Serial.print("Received UDP packet with ");
-    Serial.print(packetSize);
-    Serial.print(" bytes size - ");
-    Serial.print("SourceIP ");
-    
-    for (uint8_t i =0; i < 4; i++)
+    if (Serial1.available())
     {
-      Serial.print(remoteIP[i], DEC);
-      if (i < 3)
+        Serial.write(Serial1.read());
+    }
+
+    if (Serial.available())
+    {
+        //Serial2.write("$EIGLQ,ZDA*25\r\n");
+        Serial1.write(Serial.read());
+    }
+
+  }
+  else
+  {
+
+    writeLCD(1, "NTP server mode");
+
+    // process NTP requests
+    IPAddress remoteIP;
+    int remotePort;
+
+    int packetSize = Udp.parsePacket();
+
+    if (packetSize) 
+    {
+      
+      digitalWrite(LED_PIN, HIGH);
+
+      //store sender ip and port for later use
+      remoteIP = Udp.remoteIP();
+      remotePort = Udp.remotePort();
+
+      Serial.print("Received UDP packet with ");
+      Serial.print(packetSize);
+      Serial.print(" bytes size - ");
+      Serial.print("SourceIP ");
+      
+      for (uint8_t i =0; i < 4; i++)
       {
-        Serial.print(".");
+        Serial.print(remoteIP[i], DEC);
+        if (i < 3)
+        {
+          Serial.print(".");
+        }
+      }
+      //uint16_t port = Udp.remotePort();
+      
+      Serial.print(", Port ");
+      Serial.println(remotePort);
+
+    //Serial.println("polling receiveTime from GPS");
+      receiveTime = gps.getZDA();
+      int diff = receiveTime.centisecond() + gpsTimeOffset; 
+      if (diff <= 99)
+      {
+        receiveTime.centisecond(diff);
+      }
+      else
+      {
+        receiveTime.time(receiveTime.ntptime() + 1);
+        receiveTime.centisecond(diff-100);
+      }
+
+      //Serial.println(receiveTime.centisecond());
+      
+      // We've received a packet, read the data from it
+      // read the packet into the buffer
+      Udp.read(packetBuffer, NTP_PACKET_SIZE);
+
+      // the timestamp starts at byte 40 of the received packet and is four bytes,
+      // or two words, long. First, extract the two words:
+      unsigned long highWordSecond = word(packetBuffer[40], packetBuffer[41]);
+      unsigned long lowWordSecond = word(packetBuffer[42], packetBuffer[43]);
+      unsigned long highWordCentisecond = word(packetBuffer[44], packetBuffer[45]);
+      unsigned long lowWordCentisecond = word(packetBuffer[46], packetBuffer[47]);
+
+      // combine the four bytes (two words) into a long integer
+      // this is NTP time (seconds since Jan 1 1900):
+      originTime.time(highWordSecond << 16 | lowWordSecond);
+      originTime.centisecond(highWordCentisecond << 16 | lowWordCentisecond);
+
+      //finally: send reply
+      sendNTPpacket(remoteIP, remotePort);
+    
+      digitalWrite(LED_PIN, LOW);
+    
+      //output "done"
+      updateLCDtime();
+      Serial.println("NTP packet sent.\r\n\r\n*******************\r\n");
+      
+    }
+    else // no packet received, we can do other stuff now
+    {
+      if (millis() >= (nowtime + referenceTimeRefresh))
+      {
+          nowtime = millis();
+          referenceTime = gps.getZDA();
+          int diff = referenceTime.centisecond() + gpsTimeOffset; 
+          if (diff <= 99)
+            {
+              referenceTime.centisecond(diff);
+            }
+            else
+            {
+              referenceTime.time(referenceTime.ntptime() + 1);
+              referenceTime.centisecond(diff-100);
+            }  
+
+          
       }
     }
-    //uint16_t port = Udp.remotePort();
-    
-    Serial.print(", Port ");
-    Serial.println(remotePort);
-
-  //Serial.println("polling receiveTime from GPS");
-    receiveTime = gps.getZDA();
-    int diff = receiveTime.centisecond() + gpsTimeOffset; 
-    if (diff <= 99)
-    {
-      receiveTime.centisecond(diff);
-    }
-    else
-    {
-      receiveTime.time(receiveTime.ntptime() + 1);
-      receiveTime.centisecond(diff-100);
-    }
-
-    //Serial.println(receiveTime.centisecond());
-    
-    // We've received a packet, read the data from it
-    // read the packet into the buffer
-    Udp.read(packetBuffer, NTP_PACKET_SIZE);
-
-    // the timestamp starts at byte 40 of the received packet and is four bytes,
-    // or two words, long. First, extract the two words:
-    unsigned long highWordSecond = word(packetBuffer[40], packetBuffer[41]);
-    unsigned long lowWordSecond = word(packetBuffer[42], packetBuffer[43]);
-    unsigned long highWordCentisecond = word(packetBuffer[44], packetBuffer[45]);
-    unsigned long lowWordCentisecond = word(packetBuffer[46], packetBuffer[47]);
-
-    // combine the four bytes (two words) into a long integer
-    // this is NTP time (seconds since Jan 1 1900):
-    originTime.time(highWordSecond << 16 | lowWordSecond);
-    originTime.centisecond(highWordCentisecond << 16 | lowWordCentisecond);
-
-    //finally: send reply
-    sendNTPpacket(remoteIP, remotePort);
-  
-    digitalWrite(LED_PIN, LOW);
-  
-    //output "done"
-    updateLCDtime();
-    Serial.println("NTP packet sent.\r\n\r\n*******************\r\n");
-    
   }
-  else // no packet received, we can do other stuff now
-  {
-    if (millis() >= (nowtime + referenceTimeRefresh))
-    {
-        nowtime = millis();
-        referenceTime = gps.getZDA();
-        int diff = referenceTime.centisecond() + gpsTimeOffset; 
-        if (diff <= 99)
-          {
-            referenceTime.centisecond(diff);
-          }
-          else
-          {
-            referenceTime.time(referenceTime.ntptime() + 1);
-            referenceTime.centisecond(diff-100);
-          }  
-
-        
-    }
-  }
-
 }
 
 

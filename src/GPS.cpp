@@ -1,7 +1,10 @@
 #include "GPS.h"
+#include "HardwareSerial.h"
 
+extern HardwareSerial Serial1;
 
-HardwareSerial Serial2(2);
+//HardwareSerial Serial2(2);
+extern HardwareSerial Serial2;
 
 /**
  * Setup GPS after load
@@ -18,23 +21,51 @@ void GPS::setup() {
   //            ^-- string
   Serial2.begin(9600, SERIAL_8N1, 32,10);
 
+
+  unsigned char cfg_prt[28] = { // Baud 115200
+    0xB5,0x62,0x06,0x00,0x14,0x00,
+    0x01,0x00,0x00,0x00,0xD0,0x08,0x00,0x00,
+    0x00,0xC2,0x01,0x00,0x07,0x00,0x03,0x00,
+    0x00,0x00,0x00,0x00,
+    0xC0,0x7E };
+  
+  Serial.print("setting GPS baud rate...");
+  sendMessage(cfg_prt, 28, Serial2);
+  delay(100);
+
+  Serial2.flush();
+  delay(100);
+  Serial2.end();
+  delay(100);
+  Serial1.begin(115200, SERIAL_8N1, 32,10);
+
+
   Serial.println("disabling all NMEA messages by setting rates to 0");
 
-  Serial2.print(s2ckv0("PUBX,40,GBS,0,0,0,0"));
-  Serial2.print(s2ckv0("PUBX,40,GGA,0,0,0,0"));
-  Serial2.print(s2ckv0("PUBX,40,GLL,0,0,0,0"));
-  Serial2.print(s2ckv0("PUBX,40,GLQ,0,0,0,0"));
-  Serial2.print(s2ckv0("PUBX,40,GNQ,0,0,0,0"));
-  Serial2.print(s2ckv0("PUBX,40,GNS,0,0,0,0"));
-  Serial2.print(s2ckv0("PUBX,40,GPQ,0,0,0,0"));
-  Serial2.print(s2ckv0("PUBX,40,GRS,0,0,0,0"));
-  Serial2.print(s2ckv0("PUBX,40,GSA,0,0,0,0"));
-  Serial2.print(s2ckv0("PUBX,40,GST,0,0,0,0"));
-  Serial2.print(s2ckv0("PUBX,40,GSV,0,0,0,0"));
-  Serial2.print(s2ckv0("PUBX,40,RMC,0,0,0,0"));
-  Serial2.print(s2ckv0("PUBX,40,TXT,0,0,0,0"));
-  Serial2.print(s2ckv0("PUBX,40,VTG,0,0,0,0"));
-  Serial2.print(s2ckv0("PUBX,40,ZTA,0,1,0,0"));
+  Serial1.print(s2ckv0("PUBX,40,GBS,0,0,0,0"));
+  Serial1.print(s2ckv0("PUBX,40,GGA,0,0,0,0"));
+  Serial1.print(s2ckv0("PUBX,40,GLL,0,0,0,0"));
+  Serial1.print(s2ckv0("PUBX,40,GLQ,0,0,0,0"));
+  Serial1.print(s2ckv0("PUBX,40,GNQ,0,0,0,0"));
+  Serial1.print(s2ckv0("PUBX,40,GNS,0,0,0,0"));
+  Serial1.print(s2ckv0("PUBX,40,GPQ,0,0,0,0"));
+  Serial1.print(s2ckv0("PUBX,40,GRS,0,0,0,0"));
+  Serial1.print(s2ckv0("PUBX,40,GSA,0,0,0,0"));
+  Serial1.print(s2ckv0("PUBX,40,GST,0,0,0,0"));
+  Serial1.print(s2ckv0("PUBX,40,GSV,0,0,0,0"));
+  Serial1.print(s2ckv0("PUBX,40,RMC,0,0,0,0"));
+  Serial1.print(s2ckv0("PUBX,40,TXT,0,0,0,0"));
+  Serial1.print(s2ckv0("PUBX,40,VTG,0,0,0,0"));
+  Serial1.print(s2ckv0("PUBX,40,ZTA,0,1,0,0"));
+
+
+  //Serial.print("setting GPS channel to 1...");
+  //unsigned char cfg_channel[20] = { //use only 1 channel
+  //    0xB5, 0x62, 0x06, 0x3E, 0x0C, 0x00, 0x00, 0x00, 0x01, 0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x01, 0x55, 0xC8
+  //};
+  //sendMessage(cfg_channel, 20, Serial1);
+  //delay(100);
+
 
   //////////
   /// CFG //
@@ -74,14 +105,14 @@ void GPS::setup() {
   // B5 62 06 01 08 00 F0 08 00 00 00 00 00 00 07 5B
   bool flag = false;
 
-  uint8_t cfg_rate[] = {0xb5, 0x62, 0x06, 0x08, 0x06, 0x00, 0x3C,
-    0x00, 0x01, 0x00, 0x01, 0x00, 0x52, 0x22};
-  Serial.print("setting GPS clock rate...");
-  while (!flag) {
+  uint8_t cfg_rate[] = {0xb5, 0x62, 0x06, 0x08, 0x06, 0x00, 0x64,
+    0x00, 0x01, 0x00, 0x01, 0x00, 0x7A, 0x12};
+  Serial.print("setting GPS clock rate to 10Hz...");
+  //while (!flag) {
     // s2ck(cfg_rate, 10)
-    sendMessage(cfg_rate, 14);
-    flag = getAck(cfg_rate);
-  }
+    sendMessage(cfg_rate, 14, Serial1);
+    //flag = getAck(cfg_rate, Serial1);
+  //}
   Serial.println("ok.");
   flag = false;
 
@@ -108,21 +139,19 @@ void GPS::setup() {
   /// Example (for GLONASS {gnssId: 0x06}):
   ///   B5 62 06 3E 24 00 00 00 16 04 00 04 FF 00 00 00 00 01 01 01 03 00 00 00 00 01 05 00 03 00 00 00 00 01 06 08 FF 00 01 00 00 01 A4 0D
   ///////////////
-/*
-  uint8_t cfg_gnss[] = {0xB5, 0x62, 0x06, 0x3E, 0x24,
-    0x00, 0x00, 0x00, 0x16, 0x04,
-    0x00, 0x04, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x01,
-    0x01, 0x01, 0x03, 0x00, 0x00, 0x00, 0x00, 0x01,
-    0x05, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x01,
-    0x06, 0x08, 0xFF, 0x00, 0x01, 0x00, 0x00, 0x01, 0xA4, 0x0D};
+
+  uint8_t cfg_gnss[] = {0xB5, 0x62, 0x06, 0x3E, 0x0C,
+    0x00, 0x00, 0x00, 0x00, 0x01,
+    0x00, 0x04, 0xFF, 0x00, 0x01, 0x00, 0x00, 0x01,
+    0x56, 0xCE};
   Serial.print("setting GNSS config...");
-  while (!flag) {
-    sendMessage(cfg_gnss, 44);
-    flag = getAck(cfg_gnss);
-  }
+//  while (!flag) {
+    sendMessage(cfg_gnss, 20, Serial1);
+  //  flag = getAck(cfg_gnss);
+  //}
   Serial.println("done.");
   flag = false;
-
+/*
   // Save config
   // B5 62 06 09 0D 00 00 00 00 00 FF FF 00 00 00 00 00 00 17 31 BF
   uint8_t cfg_cfg[] = {0xB5, 0x62, 0x06, 0x09, 0x0D,
@@ -135,10 +164,11 @@ void GPS::setup() {
     flag = getAck(cfg_cfg);
   }
   Serial.println("config saved.");
+
   flag = false;
 */
-  Serial.print("Turning off NMEA message - GxZDA...");
-  Serial2.print(s2ckv0("PUBX,40,ZDA,0,0,0,0"));
+  Serial.print("Turning off NMEA message \"GxZDA\"...");
+  Serial1.print(s2ckv0("PUBX,40,ZDA,0,0,0,0"));
   Serial.println("done.");
 }
 
@@ -147,13 +177,13 @@ void GPS::setup() {
  * @param msg uint8_t array
  * @param len uint8_t
  */
-void GPS::sendMessage(uint8_t *msg, uint8_t len) {
+void GPS::sendMessage(uint8_t *msg, uint8_t len, HardwareSerial port) {
   int i = 0;
   for (i = 0; i < len; i++) {
-    Serial2.write(msg[i]);
+    port.write(msg[i]);
     // Serial.print(msg[i], HEX);
   }
-  Serial2.println();
+  port.println();
 }
 
 /**
@@ -161,7 +191,7 @@ void GPS::sendMessage(uint8_t *msg, uint8_t len) {
  * @param  msg uint8_t array
  * @return     bool
  */
-bool GPS::getAck(uint8_t *msg) {
+bool GPS::getAck(uint8_t *msg, HardwareSerial port) {
   uint8_t b;
   uint8_t ackByteID = 0;
   uint8_t ackPacket[10];
@@ -202,8 +232,8 @@ bool GPS::getAck(uint8_t *msg) {
     }
 
     // Make sure data is available to read
-    if (Serial2.available()) {
-      b = Serial2.read();
+    if (port.available()) {
+      b = port.read();
 
       // Check that bytes arrive in sequence as per expected ACK packet
       if (b == ackPacket[ackByteID]) {
@@ -286,14 +316,14 @@ DateTime GPS::getZDA() {
   //debug
   //Serial.println("sending \"$EIGPQ,ZDA*39\" to Serial2");
 
-  Serial2.print("$EIGPQ,ZDA*39\r\n");
+  Serial1.print("$EIGPQ,ZDA*39\r\n");
 
   Serial.println("Waiting for response...");
 
-  while (!Serial2.available());
+  while (!Serial1.available());
 
   while (length < 38) {
-    while (Serial2.available() > 0) {
+    while (Serial1.available() > 0) {
       //Serial.print(Serial2.read());
       if (encode()) {
         dt = now();
@@ -323,7 +353,7 @@ DateTime GPS::getZDA() {
  */
 bool GPS::encode() {
 
-  char c = Serial2.read();
+  char c = Serial1.read();
   Serial.print(c);
   //Serial.println(validCode);
   if (c == '$') {

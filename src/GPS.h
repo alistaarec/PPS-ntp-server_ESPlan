@@ -5,7 +5,6 @@
 #include <string.h>
 #include <ctype.h>
 #include <stdlib.h>
-//#include <SoftwareSerial.h>
 #include "DateTime.h"
 
 class GPSDateTime {
@@ -70,6 +69,7 @@ class GPSDateTime {
   uint16_t ltzh_, ltzn_;
 };
 
+
 class GPS {
  public:
   GPS(int rx, int tx, bool debug)
@@ -84,18 +84,6 @@ class GPS {
     getFlag_ = true;
   };
 
-  /**
-   * Start serial with baund
-   * @param baund uint32_t
-   */
-  /*
-  void begin(uint32_t baund) {
-    //GPSSerial.begin(baund);
-    Serial2.begin(115200, SERIAL_8N1, 32,10);
-    while(!Serial2);
-    setup();
-  }
-  */
   void setup();
 
   bool encode();
@@ -109,17 +97,13 @@ class GPS {
 
   DateTime getZDA(void);
 
-  /**
-   * Serial port for GPS
-   */
-  //SoftwareSerial GPSSerial;
   
   const String GPS_CODE_ZDA = "GPZDA";
  private:
   uint8_t *s2ck(uint8_t *input, int length);
   String s2ckv0(String input);
-  void sendMessage(uint8_t *msg, uint8_t len);
-  bool getAck(uint8_t *msg);
+  void sendMessage(uint8_t *msg, uint8_t len, HardwareSerial port);
+  bool getAck(uint8_t *msg, HardwareSerial port);
 
   String tmp;
 
