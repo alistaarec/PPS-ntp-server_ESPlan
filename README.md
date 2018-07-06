@@ -18,7 +18,7 @@ GND --> GND
 Tx  --> PIN10 (Rx)
 Rx  --> PIN32 (Tx)
 VCC --> +3.3V
-LED/PPS output --> PIN36  
+LED/PPS output --> 600 ohm resistor --> PIN36  
 (this needs some fine soldering with thin wire to attach PIN36 to the trace running to the GPS module LED)
 ```
 
