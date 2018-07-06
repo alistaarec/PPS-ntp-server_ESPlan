@@ -28,6 +28,13 @@ DateTime receiveTime;
 DateTime transmitTime;
 byte origTimeTs[9];
 
+// offset used to adjust PPS clock pulse to match known good time sources
+#define TIME_OFFSET_USEC 503900 
+
+//interval in seconds to sync system time with gps
+#define TIMESYNC_INTERVAL 15
+
+//i2c bus pins
 #define SDApin 16
 #define SCLpin 17
 
@@ -56,9 +63,9 @@ String ip = ""; // we use DHCP
 void writeLCD(uint8_t row, String txt)
  {
   display.setColor(BLACK);
-  display.fillRect(lcdOffsetLeft, lcdOffsetUpper+(row*15), 128, 16);
+  display.fillRect(lcdOffsetLeft, lcdOffsetUpper+(row*14), 128, 16);
   display.setColor(WHITE);
-  display.drawString(lcdOffsetLeft, lcdOffsetUpper+(row*15), txt);
+  display.drawString(lcdOffsetLeft, lcdOffsetUpper+(row*14), txt);
   display.display();
  }
 
@@ -78,12 +85,12 @@ void EthEvent(WiFiEvent_t event)
     case SYSTEM_EVENT_ETH_CONNECTED:
       Serial.println("ETH Connected");
       writeLCD(1,"ETH connected");
-      digitalWrite(LED_PIN, LOW);
       break;
     case SYSTEM_EVENT_ETH_GOT_IP:
+      digitalWrite(LED_PIN, LOW);
       ip = ETH.localIP().toString();
       writeLCD(2,"IPv4: "+ip);
-
+      
       Serial.print("ETH MAC: ");
       Serial.print(ETH.macAddress());
       Serial.print(", IPv4: ");
@@ -114,15 +121,15 @@ void EthEvent(WiFiEvent_t event)
 }
 
 
-
-
 //ISR for PPS interrupt
 void IRAM_ATTR handleInterrupt() {
   portENTER_CRITICAL_ISR(&mux);
     numberOfInterrupts++;
   portEXIT_CRITICAL_ISR(&mux);
-}         	
+}  
 
+
+/*
 // fake time provider
 time_t faketimeprovider(){
   
@@ -135,7 +142,7 @@ time_t faketimeprovider(){
     time_t time = makeTime(timeinfo);
     //Serial.println(time);
     return time;
-}
+}*/
 
 //gps time provider
 time_t gpstimeprovider()
@@ -260,7 +267,12 @@ void updateDateTime(DateTime &dt)
 {
     uint32_t _microsfraction;
     time_t _now = now(_microsfraction);
-    
+    _microsfraction += TIME_OFFSET_USEC;
+    while (_microsfraction >= 1000000)
+    {
+        _microsfraction -= 1000000;
+        _now++;
+    }
     
     DateTime _dt(_now, _microsfraction);
     dt = _dt;
@@ -338,14 +350,16 @@ void setup()
      {
         Serial.println("initial time sync successful.");
 
-        //sync coarse system time from gps serial time messages
+        // we sync coarse system time from gps serial time messages:
         Serial.println("setting GPS as SyncProvider... ");     
         setSyncProvider(&gpstimeprovider);
-        setSyncInterval(15); // get seconds from GPS every 15s
+
+        // get time from GPS every TIMESYNC_INTERVAL seconds
+        setSyncInterval(TIMESYNC_INTERVAL);
         Serial.println("ok.");
      }  
 
-    delay(120);
+    //delay(120);
     
     Serial.println("getting NTP reference time:\r\n");
     updateDateTime(referenceTime);
@@ -507,6 +521,7 @@ void loop()
         portENTER_CRITICAL(&mux);
             numberOfInterrupts=0;
             SyncToPPS();
+            
         portEXIT_CRITICAL(&mux);
         
         updateDateTime(referenceTime);
