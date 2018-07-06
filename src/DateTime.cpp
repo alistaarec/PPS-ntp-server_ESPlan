@@ -158,17 +158,19 @@ DateTime::DateTime(
   hour_ = conv2d(time);
   minute_ = conv2d(time + 3);
   second_ = conv2d(time + 6);
+
+
+  /*uint16_t DateTime::dayOfWeek() const {
+    uint16_t day = date2days(year_, month_, day_);
+
+    // Jan 1, 2000 is a Saturday, i.e. returns 6
+    return (day + 6) % 7;
+
+  */
 }
 
-/*uint16_t DateTime::dayOfWeek() const {
-  uint16_t day = date2days(year_, month_, day_);
-
-  // Jan 1, 2000 is a Saturday, i.e. returns 6
-  return (day + 6) % 7;
-}
-*/
-
-uint32_t DateTime::ntptime(void) const {
+uint32_t DateTime::ntptime(void) const 
+{
   uint32_t t;
   uint16_t days = date2days(year_, month_, day_);
   t = time2long(days, hour_, minute_, second_);
@@ -177,7 +179,8 @@ uint32_t DateTime::ntptime(void) const {
   return t;
 }
 
-uint32_t DateTime::unixtime(void) const {
+uint32_t DateTime::unixtime(void) const 
+{
   uint32_t t;
   uint16_t days = date2days(year_, month_, day_);
   t = time2long(days, hour_, minute_, second_);
@@ -186,31 +189,10 @@ uint32_t DateTime::unixtime(void) const {
   return t;
 }
 
-String DateTime::toString(void) const{
+String DateTime::toString(void) const
+  {
     char chartime[9];
-    /*
-    extern unsigned int numberOfInterrupts;
-    char chartime[20];
-    
-    char centi[4];
-    //if (microsfraction() < 10)
-    if (numberOfInterrupts < 10)
-    { sprintf(centi, "%01d00", numberOfInterrupts);
-      
-    }
-    else if (numberOfInterrupts < 100)
-    { sprintf(centi, "%02d0", numberOfInterrupts);
-      
-    }
-    else
-    {
-      //sprintf(centi, "%02d0", microsfraction());
-      sprintf(centi, "%03d", numberOfInterrupts);
-    }
-
-    sprintf(chartime, "%02d:%02d:%02d,%s", hour(), minute(), second(), centi );*/
     sprintf(chartime, "%02d:%02d:%02d", hour(), minute(), second() );
-    
     return chartime;
   }
 

@@ -278,7 +278,7 @@ extern void GPSsetup()
     delay(100);
     Serial1.begin(115200, SERIAL_8N1, 32,10);
     delay(100);
-    Serial.println("Now using UART1@115200 for GPS");
+    Serial.println("Now using Serial1 @115200 for GPS");
 
     Serial.println("disabling all NMEA messages by setting rates to 0");
 
@@ -577,8 +577,6 @@ DateTime GPSnow() {
   timestring += datetime_.minute();
   timestring += ":";
   timestring += datetime_.second();
-
-
   Serial.println(timestring);
   */
 
@@ -591,46 +589,34 @@ DateTime GPSnow() {
  * get datetime via ZDA
  * @return DateTime
  */
-DateTime getZDA() {
+DateTime getZDA() 
+{
   DateTime dt = 0;
   
-  //while (!getFlag_);
-  //getFlag_ = false;
   uint8_t length = 0;
 
-  //debug
   digitalWrite(33, HIGH);
+  //debug
   Serial.println("sending \"$EIGPQ,ZDA*39\" to Serial1");
-
   Serial1.print("$EIGPQ,ZDA*39\r\n");
-
   Serial.print("Waiting for response...");
-  //time_t _now = now();
   
   while (!Serial1.available());
-
   while ((length < 38) ) {
-    while (Serial1.available() > 0 ) {
-      //Serial.print(Serial2.read());
+    while (Serial1.available() > 0 ) 
+    {
       if (encode()) 
       {
         dt = GPSnow();
         digitalWrite(33, LOW);
         
-          /*Serial.print(dt.ntptime());
-          Serial.print(" ");
-          Serial.println(dt.centisecond());
-        */
-        //Serial.println(numberOfInterrupts);
+        
       }
       length++;
     }
   }
   Serial.println("ok.");
   
-  //Serial.println("End of getZDA");
-  //getFlag_ = true;
-  //Serial.print("dt contains: ");
-  //Serial.println(dt.toString());
+  
   return dt;
 }
