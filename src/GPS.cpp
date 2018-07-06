@@ -1,197 +1,135 @@
-#include "GPS.h"
-#include "HardwareSerial.h"
-
-extern HardwareSerial Serial1;
-
-//HardwareSerial Serial2(2);
-extern HardwareSerial Serial2;
-
-/**
- * Setup GPS after load
- */
-void GPS::setup() {
-  // TODO: config GPS via GPSSerial.write()
-  // https://www.u-blox.com/sites/default/files/products/documents/u-blox6-GPS-GLONASS-QZSS-V14_ReceiverDescrProtSpec_%28GPS.G6-SW-12013%29_Public.pdf
-  // * PUBX, 40 - p. 62
-  // * CFG-RATE - p. 116
-  // * GNSS - p. 90
-
-  // All NMEA messages should be off
-  // > $PUBX,40,msgId,rddc,rus1,rus2,rusb,rspi,reserved*cs<CR><LF>
-  //            ^-- string
-  Serial2.begin(9600, SERIAL_8N1, 32,10);
+#include <HardwareSerial.h>
+#include <microtime.h>
+#include <microTimeLib.h>
+#include "DateTime.h"
 
 
-  unsigned char cfg_prt[28] = { // Baud 115200
-    0xB5,0x62,0x06,0x00,0x14,0x00,
-    0x01,0x00,0x00,0x00,0xD0,0x08,0x00,0x00,
-    0x00,0xC2,0x01,0x00,0x07,0x00,0x03,0x00,
-    0x00,0x00,0x00,0x00,
-    0xC0,0x7E };
+
+HardwareSerial Serial1(1);
+HardwareSerial Serial2(2);
+
+// GPS init
+#define RXPin 32
+#define TXPin  10
+#define GPSBaud 115200
+#define gpsTimeOffset 2 //centisecond raw offset, compared to known-good stratum 1 server
+
+const String GPS_CODE_ZDA = "GPZDA";
+String tmp;
+
+uint8_t count_;
+uint8_t parity_;
+
+bool isNotChecked;
+bool validCode;
+bool validString;
+bool isUpdated_;
+bool getFlag_;
+
+bool debug_;
+String msg;
+
+class GPSDateTime {
+ public:
+  GPSDateTime() {};
+
+  //void commit(void);
   
-  Serial.print("setting GPS baud rate...");
-  sendMessage(cfg_prt, 28, Serial2);
-  delay(100);
-
-  Serial2.flush();
-  delay(100);
-  Serial2.end();
-  delay(100);
-  Serial1.begin(115200, SERIAL_8N1, 32,10);
-
-
-  Serial.println("disabling all NMEA messages by setting rates to 0");
-
-  Serial1.print(s2ckv0("PUBX,40,GBS,0,0,0,0"));
-  Serial1.print(s2ckv0("PUBX,40,GGA,0,0,0,0"));
-  Serial1.print(s2ckv0("PUBX,40,GLL,0,0,0,0"));
-  Serial1.print(s2ckv0("PUBX,40,GLQ,0,0,0,0"));
-  Serial1.print(s2ckv0("PUBX,40,GNQ,0,0,0,0"));
-  Serial1.print(s2ckv0("PUBX,40,GNS,0,0,0,0"));
-  Serial1.print(s2ckv0("PUBX,40,GPQ,0,0,0,0"));
-  Serial1.print(s2ckv0("PUBX,40,GRS,0,0,0,0"));
-  Serial1.print(s2ckv0("PUBX,40,GSA,0,0,0,0"));
-  Serial1.print(s2ckv0("PUBX,40,GST,0,0,0,0"));
-  Serial1.print(s2ckv0("PUBX,40,GSV,0,0,0,0"));
-  Serial1.print(s2ckv0("PUBX,40,RMC,0,0,0,0"));
-  Serial1.print(s2ckv0("PUBX,40,TXT,0,0,0,0"));
-  Serial1.print(s2ckv0("PUBX,40,VTG,0,0,0,0"));
-  Serial1.print(s2ckv0("PUBX,40,ZTA,0,1,0,0"));
-
-
-  //Serial.print("setting GPS channel to 1...");
-  //unsigned char cfg_channel[20] = { //use only 1 channel
-  //    0xB5, 0x62, 0x06, 0x3E, 0x0C, 0x00, 0x00, 0x00, 0x01, 0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x01, 0x55, 0xC8
-  //};
-  //sendMessage(cfg_channel, 20, Serial1);
-  //delay(100);
-
-
-  //////////
-  /// CFG //
-  //////////
-  /// 0xB5 0x62 <class> <id> <len> <payloads> CK_A CK_B
-  /// ^----^-- CONST    ^-- ID     ^-- field depends of LENGTH
-  ///           ^-- CLASS    ^-- LENGTH       ^----^-- Checksum
-  ///
-  /// Checksum:
-  ///  buffer[N];
-  ///  CK_A = 0, CK_B = 0
-  ///  for (int i = 0; i < N; i++) {
-  ///    CK_A = CK_A + buffer[i];
-  ///    CK_B = CK_B + CK_A;
-  ///  }
-  ///  make sure to mask both CK_A and CK_B with 0xFF
-  ///  after both operations in the loop
-  //////////
-
-  ///////////////
-  /// CFG-RATE //
-  ///////////////
-  /// Set rate for clock
-  /// Packet:
-  ///  CLASS: 0x06
-  ///  ID: 0x08
-  ///  LENGTH: 0x06
-  ///  Payloads:
-  ///    measRate (U2, ms): 60 (MIN)
-  ///    navRate (U2, cycles): 1 (CONST)
-  ///    timeRef (U2, -): 1 (GPS), 0 (UTC)
-  ///
-  /// Example:
-  ///   B5 62 06 08 | 06 00 | 3C 00 | 01 00 | 01 00 | 52 22
-  ///////////////
-
-  // B5 62 06 01 08 00 F0 08 00 00 00 00 00 00 07 5B
-  bool flag = false;
-
-  uint8_t cfg_rate[] = {0xb5, 0x62, 0x06, 0x08, 0x06, 0x00, 0x64,
-    0x00, 0x01, 0x00, 0x01, 0x00, 0x7A, 0x12};
-  Serial.print("setting GPS clock rate to 10Hz...");
-  //while (!flag) {
-    // s2ck(cfg_rate, 10)
-    sendMessage(cfg_rate, 14, Serial1);
-    //flag = getAck(cfg_rate, Serial1);
-  //}
-  Serial.println("ok.");
-  flag = false;
-
-  ///////////////
-  /// CFG-CNSS //
-  ///////////////
-  /// Config GLONASS
-  /// Packet:
-  ///  CLASS: 0x06
-  ///  ID: 0x3E
-  ///  LENGTH: 4 + 8 * numConfigBlocks
-  ///  Payloads:
-  ///   msgVer (U1, -): 0
-  ///   numTrkChHw (U1, -): READONLY
-  ///   numTrkChUse (U1, -): <== numTrkChHw
-  ///   numConfigBlocks (U1, -):
-  ///   repeat block (numConfigBlocks times):
-  ///     gnssId (U1, -)
-  ///     resTrkCh (U1, -): minimum tracking channels
-  ///     maxTrkCh (U1, -): >= resTrkCh
-  ///     reserved1 (U1, -)
-  ///     flags (X4, -): 0 in last right position
-  ///
-  /// Example (for GLONASS {gnssId: 0x06}):
-  ///   B5 62 06 3E 24 00 00 00 16 04 00 04 FF 00 00 00 00 01 01 01 03 00 00 00 00 01 05 00 03 00 00 00 00 01 06 08 FF 00 01 00 00 01 A4 0D
-  ///////////////
-
-  uint8_t cfg_gnss[] = {0xB5, 0x62, 0x06, 0x3E, 0x0C,
-    0x00, 0x00, 0x00, 0x00, 0x01,
-    0x00, 0x04, 0xFF, 0x00, 0x01, 0x00, 0x00, 0x01,
-    0x56, 0xCE};
-  Serial.print("setting GNSS config...");
-//  while (!flag) {
-    sendMessage(cfg_gnss, 20, Serial1);
-  //  flag = getAck(cfg_gnss);
-  //}
-  Serial.println("done.");
-  flag = false;
-/*
-  // Save config
-  // B5 62 06 09 0D 00 00 00 00 00 FF FF 00 00 00 00 00 00 17 31 BF
-  uint8_t cfg_cfg[] = {0xB5, 0x62, 0x06, 0x09, 0x0D,
-    0x00, 0x00, 0x00, 0x00, 0x00,
-    0xFF, 0xFF, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x17, 0x31, 0xBF};
-  Serial.print("saving config...");
-  while (!flag) {
-    sendMessage(cfg_cfg, 21);
-    flag = getAck(cfg_cfg);
-  }
-  Serial.println("config saved.");
-
-  flag = false;
-*/
-  Serial.print("Turning off NMEA message \"GxZDA\"...");
-  Serial1.print(s2ckv0("PUBX,40,ZDA,0,0,0,0"));
-  Serial.println("done.");
+/**
+ * Save new date and time to private variables
+ */
+void commit() {
+  time_ = newTime_;
+  year_ = newYear_;
+  month_ = newMonth_;
+  day_ = newDay_;
+  ltzh_ = newLtzh_;
+  ltzn_ = newLtzn_;
 }
+  DateTime now(void);
+
+  void time(String time) {
+    newTime_ = time.toFloat() * 100;
+  }
+
+  uint16_t hour() {
+    return time_ / 1000000;
+  }
+
+  uint16_t minute() {
+    return (time_ / 10000) % 100;
+  }
+
+  uint16_t second() {
+    return (time_ / 100) % 100;
+  }
+
+  uint32_t centisecond() {
+    return time_ % 100;
+  }
+
+  void day(String day) {
+    newDay_ = day.toInt();
+  }
+  uint16_t day(void) { return day_; };
+
+  void month(String month) {
+    newMonth_ = month.toInt();
+  }
+  uint16_t month(void) { return month_; };
+
+  void year(String year) {
+    newYear_ = year.toInt();
+  }
+  uint16_t year(void) { return year_; };
+
+  void ltzh(String ltzh) {
+    newLtzh_ = ltzh.toInt();
+  }
+  uint16_t ltzh(void) { return ltzh_; };
+
+  void ltzn(String ltzn) {
+    newLtzn_ = ltzn.toInt();
+  }
+  uint16_t ltzn(void) { return ltzn_; };
+
+ protected:
+  uint32_t newTime_;
+  uint16_t newYear_, newMonth_, newDay_;
+  uint16_t newLtzh_, newLtzn_;
+
+  uint32_t time_;
+  uint16_t year_, month_, day_;
+  uint16_t ltzh_, ltzn_;
+};
+
+
+GPSDateTime datetime_;
 
 /**
  * Send message
  * @param msg uint8_t array
  * @param len uint8_t
  */
-void GPS::sendMessage(uint8_t *msg, uint8_t len, HardwareSerial port) {
+void msendMessage(uint8_t *msg, uint8_t len, HardwareSerial port) 
+{
   int i = 0;
-  for (i = 0; i < len; i++) {
+  for (i = 0; i < len; i++) 
+  {
     port.write(msg[i]);
     // Serial.print(msg[i], HEX);
   }
   port.println();
 }
 
+
 /**
  * Is acknowledge right from message?
  * @param  msg uint8_t array
  * @return     bool
  */
-bool GPS::getAck(uint8_t *msg, HardwareSerial port) {
+bool getAck(uint8_t *msg, HardwareSerial port) 
+{
   uint8_t b;
   uint8_t ackByteID = 0;
   uint8_t ackPacket[10];
@@ -212,34 +150,41 @@ bool GPS::getAck(uint8_t *msg, HardwareSerial port) {
 
   // Calculate the checksums
   uint8_t i = 2;
-  for (i = 2; i < 8; i++) {
+  for (i = 2; i < 8; i++)
+  {
     ackPacket[8] = ackPacket[8] + ackPacket[i];
     ackPacket[9] = ackPacket[9] + ackPacket[8];
   }
 
-  while (1) {
+  while (1) 
+  {
     // Test for success
-    if (ackByteID > 9) {
+    if (ackByteID > 9) 
+    {
       // All packets in order!
       Serial.println(" (SUCCESS!)");
       return true;
     }
 
     // Timeout if no valid response in 3 seconds
-    if (millis() - startTime > 5000) {
+    if (millis() - startTime > 3000) 
+    {
       Serial.println(" (FAILED!)");
       return false;
     }
 
     // Make sure data is available to read
-    if (port.available()) {
+    if (port.available()) 
+    {
       b = port.read();
 
       // Check that bytes arrive in sequence as per expected ACK packet
-      if (b == ackPacket[ackByteID]) {
+      if (b == ackPacket[ackByteID]) 
+      {
         ackByteID++;
-        Serial.print(b, HEX);
-      } else {
+        //Serial.print(b, HEX);
+      } else 
+      {
         ackByteID = 0;  // Reset and look again, invalid order
       }
     }
@@ -252,7 +197,8 @@ bool GPS::getAck(uint8_t *msg, HardwareSerial port) {
  * @param  length int
  * @return        uint8_t array
  */
-uint8_t *GPS::s2ck(uint8_t *input, int length) {
+uint8_t *s2ck(uint8_t *input, int length) 
+{
   uint8_t result[length + 4];
 
   result[0] = 0xb5;
@@ -287,11 +233,13 @@ uint8_t *GPS::s2ck(uint8_t *input, int length) {
  * @param  input String
  * @return       String
  */
-String GPS::s2ckv0(String input) {
+String s2ckv0(String input) 
+{
   int i = 0;
   uint8_t checksum = 0;
 
-  for (i = 0; i < input.length(); i++) {
+  for (i = 0; i < input.length(); i++) 
+  {
     checksum ^= (uint8_t) input[i];
   }
 
@@ -303,47 +251,197 @@ String GPS::s2ckv0(String input) {
   return result;
 }
 
-/**
- * get datetime via ZDA
- * @return DateTime
- */
-DateTime GPS::getZDA() {
-  DateTime dt;
-  while (!getFlag_);
-  getFlag_ = false;
-  uint8_t length = 0;
 
-  //debug
-  //Serial.println("sending \"$EIGPQ,ZDA*39\" to Serial2");
 
-  Serial1.print("$EIGPQ,ZDA*39\r\n");
+extern void GPSsetup()
+{
 
-  Serial.println("Waiting for response...");
+    Serial2.begin(9600, SERIAL_8N1, 32,10);
 
-  while (!Serial1.available());
 
-  while (length < 38) {
-    while (Serial1.available() > 0) {
-      //Serial.print(Serial2.read());
-      if (encode()) {
-        dt = now();
-        
-        
-          Serial.print(dt.ntptime());
-          Serial.print(" ");
-          Serial.println(dt.centisecond());
-        
-      }
-      length++;
+    unsigned char cfg_prt[28] = { // Baud 115200
+        0xB5,0x62,0x06,0x00,0x14,0x00,
+        0x01,0x00,0x00,0x00,0xD0,0x08,0x00,0x00,
+        0x00,0xC2,0x01,0x00,0x07,0x00,0x03,0x00,
+        0x00,0x00,0x00,0x00,
+        0xC0,0x7E };
+    
+    Serial.print("setting GPS baud rate to 115200...");
+    msendMessage(cfg_prt, 28, Serial2);
+    delay(400);
+    Serial.println("ok.");
+    delay(600);
+    Serial.println("Restarting GPS comm UART...");
+    Serial2.flush();
+    delay(100);
+    Serial2.end();
+    delay(100);
+    Serial1.begin(115200, SERIAL_8N1, 32,10);
+    delay(100);
+    Serial.println("Now using UART1@115200 for GPS");
+
+    Serial.println("disabling all NMEA messages by setting rates to 0");
+
+    Serial1.print(s2ckv0("PUBX,40,GBS,0,0,0,0"));
+    Serial1.print(s2ckv0("PUBX,40,GGA,0,0,0,0"));
+    Serial1.print(s2ckv0("PUBX,40,GLL,0,0,0,0"));
+    Serial1.print(s2ckv0("PUBX,40,GLQ,0,0,0,0"));
+    Serial1.print(s2ckv0("PUBX,40,GNQ,0,0,0,0"));
+    Serial1.print(s2ckv0("PUBX,40,GNS,0,0,0,0"));
+    Serial1.print(s2ckv0("PUBX,40,GPQ,0,0,0,0"));
+    Serial1.print(s2ckv0("PUBX,40,GRS,0,0,0,0"));
+    Serial1.print(s2ckv0("PUBX,40,GSA,0,0,0,0"));
+    Serial1.print(s2ckv0("PUBX,40,GST,0,0,0,0"));
+    Serial1.print(s2ckv0("PUBX,40,GSV,0,0,0,0"));
+    Serial1.print(s2ckv0("PUBX,40,RMC,0,0,0,0"));
+    Serial1.print(s2ckv0("PUBX,40,TXT,0,0,0,0"));
+    Serial1.print(s2ckv0("PUBX,40,VTG,0,0,0,0"));
+    Serial1.print(s2ckv0("PUBX,40,ZTA,0,1,0,0"));
+
+
+
+    //////////
+    /// CFG //
+    //////////
+    /// 0xB5 0x62 <class> <id> <len> <payloads> CK_A CK_B
+    /// ^----^-- CONST    ^-- ID     ^-- field depends of LENGTH
+    ///           ^-- CLASS    ^-- LENGTH       ^----^-- Checksum
+    ///
+    /// Checksum:
+    ///  buffer[N];
+    ///  CK_A = 0, CK_B = 0
+    ///  for (int i = 0; i < N; i++) {
+    ///    CK_A = CK_A + buffer[i];
+    ///    CK_B = CK_B + CK_A;
+    ///  }
+    ///  make sure to mask both CK_A and CK_B with 0xFF
+    ///  after both operations in the loop
+    //////////
+
+    ///////////////
+    /// CFG-RATE //
+    ///////////////
+    /// Set rate for clock
+    /// Packet:
+    ///  CLASS: 0x06
+    ///  ID: 0x08
+    ///  LENGTH: 0x06
+    ///  Payloads:
+    ///    measRate (U2, ms): 60 (MIN)
+    ///    navRate (U2, cycles): 1 (CONST)
+    ///    timeRef (U2, -): 1 (GPS), 0 (UTC)
+    ///
+    /// Example:
+    ///   B5 62 06 08 | 06 00 | 3C 00 | 01 00 | 01 00 | 52 22
+    ///////////////
+
+    // B5 62 06 01 08 00 F0 08 00 00 00 00 00 00 07 5B
+    
+    bool flag = false;
+    /*
+    uint8_t cfg_rate[] = {0xb5, 0x62, 0x06, 0x08, 0x06, 0x00, 0x64,
+        0x00, 0x01, 0x00, 0x01, 0x00, 0x7A, 0x12};
+    Serial.print("setting GPS internal clock rate to 10Hz...");
+    //while (!flag) {
+        // s2ck(cfg_rate, 10)
+        msendMessage(cfg_rate, 14, Serial1);
+        //flag = getAck(cfg_rate, Serial1);
+    //}
+    delay(1000);
+    Serial.println("ok.");
+    flag = false;
+    */
+
+    /*
+    uint8_t cfg_timepulse[] = { // off when not in sync; 1000 PPS when GPS clock in sync
+    0xB5, 0x62, 0x06, 0x31, 0x20, 0x00, 0x00, 0x01, 
+    0x00, 0x00, 0x32, 0x00, 0x00, 0x00, 0x40, 0x42, 
+    0x0F, 0x00, 0xE8, 0x03, 0x00, 0x00, 0x00, 0x00,  
+    0x00, 0x00, 0x64, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0xF7, 0x00, 0x00, 0x00, 0x61, 0x7F
+    };
+*/
+
+    uint8_t cfg_timepulse[] = { // off when not in sync; 1 PPS when GPS clock in sync
+    0xB5, 0x62, 0x06, 0x31, 0x20, 0x00, 0x00, 0x01, 
+    0x00, 0x00, 0x32, 0x00, 0x00, 0x00, 0x40, 0x42, 
+    0x0F, 0x00, 0x40, 0x42, 0x0F, 0x00, 0x00, 0x00,  
+    0x00, 0x00, 0x20, 0xA1, 0x07, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0xB7, 0x00, 0x00, 0x00, 0x2B, 0x1B
+    };
+
+
+    Serial.print("setting GPS synced timepulse output to exactly 1 PPS with 100ms puls length...");
+    //while (!flag) {
+        // s2ck(cfg_rate, 10)
+        msendMessage(cfg_timepulse, 40, Serial1);
+        //flag = getAck(cfg_rate, Serial1);
+    //}
+    delay(1000);
+    Serial.println("ok.");
+    flag = false;
+
+
+
+    ///////////////
+    /// CFG-CNSS //
+    ///////////////
+    /// Config GLONASS
+    /// Packet:
+    ///  CLASS: 0x06
+    ///  ID: 0x3E
+    ///  LENGTH: 4 + 8 * numConfigBlocks
+    ///  Payloads:
+    ///   msgVer (U1, -): 0
+    ///   numTrkChHw (U1, -): READONLY
+    ///   numTrkChUse (U1, -): <== numTrkChHw
+    ///   numConfigBlocks (U1, -):
+    ///   repeat block (numConfigBlocks times):
+    ///     gnssId (U1, -)
+    ///     resTrkCh (U1, -): minimum tracking channels
+    ///     maxTrkCh (U1, -): >= resTrkCh
+    ///     reserved1 (U1, -)
+    ///     flags (X4, -): 0 in last right position
+    ///
+    /// Example (for GLONASS {gnssId: 0x06}):
+    ///   B5 62 06 3E 24 00 00 00 16 04 00 04 FF 00 00 00 00 01 01 01 03 00 00 00 00 01 05 00 03 00 00 00 00 01 06 08 FF 00 01 00 00 01 A4 0D
+    ///////////////
+
+    uint8_t cfg_gnss[] = {0xB5, 0x62, 0x06, 0x3E, 0x0C,
+        0x00, 0x00, 0x00, 0x00, 0x01,
+        0x00, 0x04, 0xFF, 0x00, 0x01, 0x00, 0x00, 0x01,
+        0x56, 0xCE};
+    Serial.print("setting GNSS config...");
+    //  while (!flag) {
+        msendMessage(cfg_gnss, 20, Serial1);
+    //  flag = getAck(cfg_gnss);
+    //}
+    delay(800);
+    Serial.println("done.");
+    flag = false;
+    /*
+    // Save config
+    // B5 62 06 09 0D 00 00 00 00 00 FF FF 00 00 00 00 00 00 17 31 BF
+    uint8_t cfg_cfg[] = {0xB5, 0x62, 0x06, 0x09, 0x0D,
+        0x00, 0x00, 0x00, 0x00, 0x00,
+        0xFF, 0xFF, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x17, 0x31, 0xBF};
+    Serial.print("saving config...");
+    while (!flag) {
+        sendMessage(cfg_cfg, 21);
+        flag = getAck(cfg_cfg);
     }
-  }
-  //Serial.print("got response -  ");
-  
-  //Serial.println("End of getZDA");
-  getFlag_ = true;
-  
-  return dt;
+    Serial.println("config saved.");
+
+    flag = false;
+    */
+    Serial.print("Turning off NMEA message type \"GxZDA\"...");
+    Serial1.print(s2ckv0("PUBX,40,ZDA,0,0,0,0"));
+    Serial.println("done.");
+    
 }
+
+
 
 /**
  * Encode line to instance
@@ -351,13 +449,12 @@ DateTime GPS::getZDA() {
  * $0    ,1        ,2 ,3 ,4   ,5 ,6 *7  <-- pos
  * @return   encoded
  */
-bool GPS::encode() {
+bool encode() {
 
   char c = Serial1.read();
-  Serial.print(c);
-  //Serial.println(validCode);
+  //Serial.print(c);
+
   if (c == '$') {
-    //Serial.println("dollar sign detected - ignoring it");
     
     tmp = "\0";
     msg = "$";
@@ -463,24 +560,77 @@ bool GPS::encode() {
   return false;
 }
 
-/**
- * Save new date and time to private variables
- */
-void GPSDateTime::commit() {
-  time_ = newTime_;
-  year_ = newYear_;
-  month_ = newMonth_;
-  day_ = newDay_;
-  ltzh_ = newLtzh_;
-  ltzn_ = newLtzn_;
-}
+
 
 /**
  * Return instance of DateTime class
  * @return DateTime
  */
-DateTime GPSDateTime::now() {
-  return DateTime(year(), month(), day(),
-    hour(), minute(), second(), centisecond());
+DateTime GPSnow() {
+  
+  /*Serial.print("GPSnow was called: ");
+  String timestring = "";
+  timestring += datetime_.year();
+  timestring += ":";
+  timestring += datetime_.hour();
+  timestring += ":";
+  timestring += datetime_.minute();
+  timestring += ":";
+  timestring += datetime_.second();
+
+
+  Serial.println(timestring);
+  */
+
+  return DateTime(datetime_.year(), datetime_.month(), datetime_.day(),
+    datetime_.hour(), datetime_.minute(), datetime_.second(), datetime_.centisecond());
 }
 
+
+/**
+ * get datetime via ZDA
+ * @return DateTime
+ */
+DateTime getZDA() {
+  DateTime dt = 0;
+  
+  //while (!getFlag_);
+  //getFlag_ = false;
+  uint8_t length = 0;
+
+  //debug
+  digitalWrite(33, HIGH);
+  Serial.println("sending \"$EIGPQ,ZDA*39\" to Serial1");
+
+  Serial1.print("$EIGPQ,ZDA*39\r\n");
+
+  Serial.print("Waiting for response...");
+  //time_t _now = now();
+  
+  while (!Serial1.available());
+
+  while ((length < 38) ) {
+    while (Serial1.available() > 0 ) {
+      //Serial.print(Serial2.read());
+      if (encode()) 
+      {
+        dt = GPSnow();
+        digitalWrite(33, LOW);
+        
+          /*Serial.print(dt.ntptime());
+          Serial.print(" ");
+          Serial.println(dt.centisecond());
+        */
+        //Serial.println(numberOfInterrupts);
+      }
+      length++;
+    }
+  }
+  Serial.println("ok.");
+  
+  //Serial.println("End of getZDA");
+  //getFlag_ = true;
+  //Serial.print("dt contains: ");
+  //Serial.println(dt.toString());
+  return dt;
+}

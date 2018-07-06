@@ -31,8 +31,8 @@ static long time2long(uint16_t days, uint16_t h, uint16_t m, uint16_t s) {
 // DateTime implementation - ignores time zones and DST changes
 // NOTE: also ignores leap seconds, see http://en.wikipedia.org/wiki/Leap_second
 
-DateTime::DateTime(uint32_t t, uint32_t centisecond)
-  : centisecond_(centisecond) {
+DateTime::DateTime(uint32_t t, unsigned long microsfraction)
+  : microsfraction_(microsfraction) {
   // bring to 2000 timestamp from 1900
   t -= SECONDS_FROM_1900_TO_2000;
 
@@ -98,14 +98,14 @@ DateTime::DateTime(
   uint16_t year, uint16_t month,
   uint16_t day, uint16_t hour,
   uint16_t minute, uint16_t second,
-  uint32_t centisecond)
+  unsigned long microsfraction)
   : year_( (year >= 2000) ? year - 2000 : year),
     month_(month),
     day_(day),
     hour_(hour),
     minute_(minute),
     second_(second),
-    centisecond_(centisecond) {}
+    microsfraction_(microsfraction) {}
 
 static uint16_t conv2d(const char *p) {
   uint16_t v = 0;
@@ -121,8 +121,8 @@ static uint16_t conv2d(const char *p) {
 DateTime::DateTime(
   const char *date,
   const char *time,
-  uint32_t centisecond)
-  : centisecond_(centisecond) {
+  unsigned long microsfraction)
+  : microsfraction_(microsfraction) {
   // sample input: date = "Dec 26 2009", time = "12:34:56"
   year_ = conv2d(date + 9);
   // Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec
@@ -160,12 +160,13 @@ DateTime::DateTime(
   second_ = conv2d(time + 6);
 }
 
-uint16_t DateTime::dayOfWeek() const {
+/*uint16_t DateTime::dayOfWeek() const {
   uint16_t day = date2days(year_, month_, day_);
 
   // Jan 1, 2000 is a Saturday, i.e. returns 6
   return (day + 6) % 7;
 }
+*/
 
 uint32_t DateTime::ntptime(void) const {
   uint32_t t;
@@ -186,18 +187,30 @@ uint32_t DateTime::unixtime(void) const {
 }
 
 String DateTime::toString(void) const{
+    char chartime[9];
+    /*
+    extern unsigned int numberOfInterrupts;
     char chartime[20];
+    
     char centi[4];
-    if (centisecond() < 10)
-    { sprintf(centi, "%01d00", centisecond());
+    //if (microsfraction() < 10)
+    if (numberOfInterrupts < 10)
+    { sprintf(centi, "%01d00", numberOfInterrupts);
+      
+    }
+    else if (numberOfInterrupts < 100)
+    { sprintf(centi, "%02d0", numberOfInterrupts);
       
     }
     else
     {
-      sprintf(centi, "%02d0", centisecond());
+      //sprintf(centi, "%02d0", microsfraction());
+      sprintf(centi, "%03d", numberOfInterrupts);
     }
 
-    sprintf(chartime, "%02d:%02d:%02d,%s", hour(), minute(), second(), centi );
+    sprintf(chartime, "%02d:%02d:%02d,%s", hour(), minute(), second(), centi );*/
+    sprintf(chartime, "%02d:%02d:%02d", hour(), minute(), second() );
+    
     return chartime;
   }
 
