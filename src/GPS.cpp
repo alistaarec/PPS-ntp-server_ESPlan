@@ -5,8 +5,8 @@
 
 
 
-HardwareSerial Serial1(1);
-HardwareSerial Serial2(2);
+//HardwareSerial Serial1(1);
+//HardwareSerial Serial2(2);
 
 // GPS init
 #define RXPin 32
